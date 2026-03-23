@@ -1,10 +1,72 @@
-<script>
-    // YOUR API KEY
-    const API_KEY = '1ef7cf3d13cf21a6ae03a484ef038941f80dac819cd7d5fe5a196770d33d099c';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precision Font Finder</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <style>
+        :root { --primary: #1a73e8; --success: #28a745; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { text-align: center; margin-top: 0; color: #111; }
+        
+        /* Cropper Area */
+        .img-container { width: 100%; max-height: 450px; margin-top: 20px; background-color: #f7f7f7; display: none; overflow: hidden; border: 1px solid #ddd; }
+        #imageToCrop { max-width: 100%; display: block; }
+        
+        .controls { display: flex; gap: 10px; justify-content: center; margin: 20px 0; display: none; }
+        button { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #1557b0; }
+        
+        .upload-zone { border: 2px dashed #cbd5e0; padding: 50px; text-align: center; border-radius: 10px; cursor: pointer; background: #fafafa; }
+        .upload-zone:hover { border-color: var(--primary); background: #f0f7ff; }
+        
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+        .font-card { border: 1px solid #eee; padding: 15px; border-radius: 8px; background: white; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .font-card img { max-width: 100%; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .font-name { display: block; font-weight: bold; margin-bottom: 10px; font-size: 14px; color: #444; }
+        .dl-link { color: white; background: var(--success); text-decoration: none; padding: 8px 15px; border-radius: 4px; font-size: 12px; display: inline-block; }
+
+        .cors-notice { background: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffeeba; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Font Finder Pro</h1>
+
+    <div class="cors-notice" id="corsNotice">
+        <strong>⚠️ Important:</strong> If you get a "Connection Error," please ensure you have a "CORS Unblock" extension active in your browser, or visit <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank">CORS Anywhere Demo</a> and click "Request temporary access."
+    </div>
     
-    // We will use this proxy to bypass the "Connection Error" (CORS)
-    const PROXY_URL = 'https://cors-anywhere.herokuapp.com/';
-    const TARGET_URL = 'https://www.whatfontis.com/api2/';
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <p style="font-size: 40px; margin: 0;">🖼️</p>
+        <p><strong>Click to upload your screenshot</strong></p>
+        <p style="font-size: 12px; color: #888;">PNG, JPG, or GIF</p>
+        <input type="file" id="fileInput" hidden accept="image/*">
+    </div>
+
+    <div class="img-container" id="imgWrapper">
+        <img id="imageToCrop">
+    </div>
+
+    <div class="controls" id="controls">
+        <button class="btn-primary" onclick="processCrop()">Identify Selection</button>
+        <button style="background:#666; color:white;" onclick="window.location.reload()">Start Over</button>
+    </div>
+
+    <div id="status" style="text-align:center; margin:10px; font-weight:bold; color:var(--primary);"></div>
+    <div class="results-grid" id="resultsArea"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
+<script>
+    const API_KEY = '1ef7cf3d13cf21a6ae03a484ef038941f80dac819cd7d5fe5a196770d33d099c';
+    const PROXY = 'https://cors-anywhere.herokuapp.com/';
+    const API_URL = 'https://www.whatfontis.com/api2/';
 
     let cropper;
     const fileInput = document.getElementById('fileInput');
@@ -14,44 +76,35 @@
     const status = document.getElementById('status');
     const resultsArea = document.getElementById('resultsArea');
 
-    // 1. IMPROVED IMAGE UPLOAD LOGIC
-    fileInput.onchange = (e) => {
+    fileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = function(event) {
             image.src = event.target.result;
-            
-            // Show the cropper UI
             wrapper.style.display = 'block';
             controls.style.display = 'flex';
             document.getElementById('uploadZone').style.display = 'none';
             
             if (cropper) cropper.destroy();
-            
-            // Initialize Cropper
             cropper = new Cropper(image, {
                 viewMode: 1,
                 autoCropArea: 0.8,
-                responsive: true,
-                restore: false,
+                background: false
             });
         };
         reader.readAsDataURL(file);
-    };
+    });
 
-    // 2. UPDATED API CALL WITH PROXY
     async function processCrop() {
         if (!cropper) return;
         
-        status.innerText = "⏳ Sending to WhatFontIs... (Check Console F12 if slow)";
+        status.innerText = "🔍 Analyzing font selection...";
         resultsArea.innerHTML = '';
 
         try {
-            const canvas = cropper.getCroppedCanvas({
-                width: 500, // Resize slightly to make the request faster
-            });
+            const canvas = cropper.getCroppedCanvas();
             const base64Image = canvas.toDataURL('image/png').split(',')[1];
 
             const params = new URLSearchParams();
@@ -61,12 +114,13 @@
             params.append('FREEFONTS', '1');
             params.append('limit', '8');
 
-            // Using the Proxy here to fix the "Connection Error"
-            const response = await fetch(PROXY_URL + TARGET_URL, {
+            const response = await fetch(PROXY + API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: params
             });
+
+            if (!response.ok) throw new Error('API request failed');
 
             const fonts = await response.json();
             status.innerText = "";
@@ -76,18 +130,21 @@
                     const card = document.createElement('div');
                     card.className = 'font-card';
                     card.innerHTML = `
-                        <img src="${font.image}" alt="preview">
+                        <img src="${font.image}" alt="font">
                         <span class="font-name">${font.title}</span>
-                        <a href="${font.url}" target="_blank" class="dl-link">Download Font</a>
+                        <a href="${font.url}" target="_blank" class="dl-link">Download</a>
                     `;
                     resultsArea.appendChild(card);
                 });
             } else {
-                status.innerText = "❌ No fonts found. Try a different crop.";
+                status.innerText = "❌ No matching fonts found. Try a cleaner crop.";
             }
         } catch (err) {
-            console.error("FULL ERROR LOG:", err);
-            status.innerHTML = `❌ Error: ${err.message}<br><small>If using proxy, ensure you visited <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank">this link</a> once.</small>`;
+            console.error(err);
+            status.innerHTML = "❌ Connection Error. <br><small>Make sure to activate the Proxy access via the link above.</small>";
         }
     }
 </script>
+
+</body>
+</html>
